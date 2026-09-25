@@ -1,0 +1,38 @@
+name: bronze_general_payments
+layer: bronze
+
+source:
+  dataset: GNRL
+  format: csv
+  pattern: "OP_DTL_GNRL_PGYR*.csv"
+  # Column that local sampling filters on. Fabric ignores this.
+  manufacturer_column: Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name
+  # TODO: generate from the CMS data dictionary -> config/schemas/general_payments.json
+  schema: null
+  options:
+    header: true
+    quote: '"'
+    escape: '"'
+    # Open Payments quotes fields containing commas, e.g. "Lilly USA, LLC".
+    multiLine: true
+    mode: PERMISSIVE
+
+target:
+  table: gnrl_payments
+  mode: overwrite
+  partition_by: [Program_Year]
+
+# Bronze expectations verify faithful capture, not business correctness.
+expectations:
+  - type: not_null
+    columns: [Record_ID]
+    severity: error
+  - type: unique
+    columns: [Record_ID]
+    severity: error
+  - type: row_count_min
+    value: 1000
+    severity: error
+  - type: not_null
+    columns: [Program_Year, Total_Amount_of_Payment_USDollars]
+    severity: warn

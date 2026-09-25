@@ -1,0 +1,55 @@
+# Local development environment.
+# Same pipeline configs run here and in Fabric -- only these path roots change.
+env: local
+
+paths:
+  # Where the raw CMS Open Payments CSVs were downloaded to.
+  source: ./dataset
+  # Mirrors the Lakehouse "Files" (unmanaged) area.
+  files: ./lakehouse/Files/landing/open_payments
+  # Mirror the Lakehouse "Tables" (managed Delta) area.
+  bronze: ./lakehouse/Tables/bronze
+  silver: ./lakehouse/Tables/silver
+  gold: ./lakehouse/Tables/gold
+  quarantine: ./lakehouse/Files/quarantine
+  dq_results: ./lakehouse/Tables/ops/dq_results
+
+spark:
+  master: local[8]
+  shuffle_partitions: 16
+  configs:
+    spark.sql.extensions: io.delta.sql.DeltaSparkSessionExtension
+    spark.sql.catalog.spark_catalog: org.apache.spark.sql.delta.catalog.DeltaCatalog
+    spark.databricks.delta.retentionDurationCheck.enabled: "false"
+
+# Local runs work on a subset so iteration stays fast.
+# Fabric runs the full population. This is the ONLY behavioural difference.
+sampling:
+  enabled: true
+  # CMS embeds newlines inside quoted fields (~2 per million rows), so the CSV
+  # reader must run with multiLine=true -- which makes the file UNSPLITTABLE.
+  # Fabric pays that single-task cost once when converting to Delta; on a laptop
+  # a 9.2 GB single-task read is unworkable, so local stages read a head extract.
+  # Set to 0 to disable and read the full files locally.
+  dev_extract_rows: 400000
+  # Lilly plus large-pharma peers, so risk rules have a real peer group to
+  # compare against. Matched case-insensitively: CMS submitters supply their own
+  # entity name with no casing convention (PFIZER INC. next to
+  # AstraZeneca Pharmaceuticals LP), and an exact match silently drops entities.
+  # Verified present in the PY2025 General Payments extract.
+  filter_manufacturers:
+    - "Lilly USA, LLC"
+    - "AbbVie Inc."
+    - "Pfizer Inc."
+    - "AstraZeneca Pharmaceuticals LP"
+    - "Novo Nordisk Inc"
+    - "Amgen Inc."
+    - "Janssen Biotech, Inc."
+    - "Novartis Pharmaceuticals Corporation"
+    - "GlaxoSmithKline, LLC."
+    - "Merck Sharp & Dohme LLC"
+    - "Boehringer Ingelheim Pharmaceuticals, Inc."
+    # Sanofi reports under three separate legal entities (Pasteur, Aventis,
+    # US Services). Only one is listed here; rolling the family up to a single
+    # parent is the curated-crosswalk TODO in transforms/silver.py.
+    - "Sanofi-Aventis U.S. LLC"

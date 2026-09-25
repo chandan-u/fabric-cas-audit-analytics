@@ -1,0 +1,38 @@
+name: silver_payments
+layer: silver
+
+# Conforms both payment extracts onto one grain so risk rules are written once.
+source:
+  tables:
+    - table: gnrl_payments
+      category: GENERAL
+    - table: rsrch_payments
+      category: RESEARCH
+
+target:
+  table: payments
+  mode: overwrite
+  partition_by: [program_year]
+
+# Silver expectations verify the business grain holds after dedupe/conforming.
+expectations:
+  # Headline duplicate control: one current row per CMS Record_ID.
+  - type: unique
+    columns: [payment_id]
+    severity: error
+  - type: not_null
+    columns: [payment_id, recipient_key, manufacturer_name_norm]
+    severity: error
+  - type: non_negative
+    columns: [amount_usd]
+    severity: warn
+  - type: accepted_values
+    columns: [payment_category]
+    values: [GENERAL, RESEARCH]
+    severity: error
+  - type: not_null
+    columns: [payment_date]
+    severity: warn
+  - type: row_count_min
+    value: 1000
+    severity: error

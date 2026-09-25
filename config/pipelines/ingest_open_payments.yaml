@@ -1,0 +1,13 @@
+name: ingest_open_payments
+layer: landing
+
+# Stage 00. Lands raw CMS extracts in Lakehouse Files and writes a manifest.
+# local  -> symlink (avoids duplicating ~20 GB on a laptop)
+# fabric -> copy    (source and Lakehouse are genuinely different stores)
+land_mode: null   # null = decide from environment
+
+source:
+  system: CMS Open Payments (public bulk download)
+  url: https://www.cms.gov/openpayments/explore-the-data/dataset-downloads.html
+  datasets: [GNRL, RSRCH, OWNRSHP]
+  program_years: [2024, 2025]

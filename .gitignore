@@ -6,3 +6,5 @@ __pycache__/
 .pytest_cache/
 spark-warehouse/
 *.crdownload
+IMG_*.pdf
+IMG_*.jpg

@@ -1,0 +1,219 @@
+{
+  "_comment": [
+    "Fabric Data Factory pipeline: CAS Open Payments medallion load.",
+    "Import via Fabric > Data Factory > Pipeline > Edit > View as JSON, or deploy",
+    "through Fabric Git integration. Replace every <...> placeholder with the",
+    "workspace and notebook GUIDs from your workspace.",
+    "",
+    "Flow: Ingest -> (Bronze GNRL | Bronze RSRCH in parallel, each gated by DQ)",
+    "      -> Silver -> DQ -> Gold -> DQ.",
+    "Each DQ activity fails the run on an error-severity expectation, so a",
+    "duplicate key or a broken grain stops the load rather than propagating into",
+    "the semantic model."
+  ],
+  "properties": {
+    "parameters": {
+      "env": { "type": "string", "defaultValue": "fabric" },
+      "dev_extract_rows": { "type": "int", "defaultValue": 0 }
+    },
+    "variables": {
+      "manifest_path": { "type": "String" }
+    },
+    "activities": [
+      {
+        "name": "Ingest_Source_To_Files",
+        "type": "TridentNotebook",
+        "dependsOn": [],
+        "policy": { "timeout": "0.02:00:00", "retry": 1, "retryIntervalInSeconds": 60 },
+        "typeProperties": {
+          "notebookId": "<notebook-guid-00-ingest>",
+          "workspaceId": "<workspace-guid>",
+          "parameters": {
+            "env":      { "value": { "value": "@pipeline().parameters.env", "type": "Expression" }, "type": "string" },
+            "pipeline": { "value": "ingest_open_payments", "type": "string" },
+            "run_id":   { "value": { "value": "@pipeline().RunId", "type": "Expression" }, "type": "string" }
+          }
+        }
+      },
+      {
+        "name": "Set_Manifest_Path",
+        "type": "SetVariable",
+        "dependsOn": [{ "activity": "Ingest_Source_To_Files", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "variableName": "manifest_path",
+          "value": {
+            "value": "@json(activity('Ingest_Source_To_Files').output.result.exitValue).manifest_path",
+            "type": "Expression"
+          }
+        }
+      },
+
+      {
+        "name": "Bronze_General_Payments",
+        "type": "TridentNotebook",
+        "dependsOn": [{ "activity": "Set_Manifest_Path", "dependencyConditions": ["Succeeded"] }],
+        "policy": { "timeout": "0.06:00:00", "retry": 1, "retryIntervalInSeconds": 120 },
+        "typeProperties": {
+          "notebookId": "<notebook-guid-01-bronze>",
+          "workspaceId": "<workspace-guid>",
+          "parameters": {
+            "env":           { "value": { "value": "@pipeline().parameters.env", "type": "Expression" }, "type": "string" },
+            "pipeline":      { "value": "bronze_general_payments", "type": "string" },
+            "run_id":        { "value": { "value": "@pipeline().RunId", "type": "Expression" }, "type": "string" },
+            "manifest_path": { "value": { "value": "@variables('manifest_path')", "type": "Expression" }, "type": "string" }
+          }
+        }
+      },
+      {
+        "name": "DQ_Bronze_General",
+        "type": "TridentNotebook",
+        "dependsOn": [{ "activity": "Bronze_General_Payments", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "notebookId": "<notebook-guid-03-dq>",
+          "workspaceId": "<workspace-guid>",
+          "parameters": {
+            "env":            { "value": { "value": "@pipeline().parameters.env", "type": "Expression" }, "type": "string" },
+            "pipeline":       { "value": "bronze_general_payments", "type": "string" },
+            "layer":          { "value": "bronze", "type": "string" },
+            "run_id":         { "value": { "value": "@pipeline().RunId", "type": "Expression" }, "type": "string" },
+            "fail_on_error":  { "value": true, "type": "bool" }
+          }
+        }
+      },
+
+      {
+        "name": "Bronze_Research_Payments",
+        "type": "TridentNotebook",
+        "_comment": "Runs in parallel with the General branch -- both depend only on the manifest.",
+        "dependsOn": [{ "activity": "Set_Manifest_Path", "dependencyConditions": ["Succeeded"] }],
+        "policy": { "timeout": "0.06:00:00", "retry": 1, "retryIntervalInSeconds": 120 },
+        "typeProperties": {
+          "notebookId": "<notebook-guid-01-bronze>",
+          "workspaceId": "<workspace-guid>",
+          "parameters": {
+            "env":           { "value": { "value": "@pipeline().parameters.env", "type": "Expression" }, "type": "string" },
+            "pipeline":      { "value": "bronze_research_payments", "type": "string" },
+            "run_id":        { "value": { "value": "@pipeline().RunId", "type": "Expression" }, "type": "string" },
+            "manifest_path": { "value": { "value": "@variables('manifest_path')", "type": "Expression" }, "type": "string" }
+          }
+        }
+      },
+      {
+        "name": "DQ_Bronze_Research",
+        "type": "TridentNotebook",
+        "dependsOn": [{ "activity": "Bronze_Research_Payments", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "notebookId": "<notebook-guid-03-dq>",
+          "workspaceId": "<workspace-guid>",
+          "parameters": {
+            "env":           { "value": { "value": "@pipeline().parameters.env", "type": "Expression" }, "type": "string" },
+            "pipeline":      { "value": "bronze_research_payments", "type": "string" },
+            "layer":         { "value": "bronze", "type": "string" },
+            "run_id":        { "value": { "value": "@pipeline().RunId", "type": "Expression" }, "type": "string" },
+            "fail_on_error": { "value": true, "type": "bool" }
+          }
+        }
+      },
+
+      {
+        "name": "Silver_Payments",
+        "type": "TridentNotebook",
+        "_comment": "Waits for BOTH Bronze DQ gates -- Silver unions the two extracts.",
+        "dependsOn": [
+          { "activity": "DQ_Bronze_General",  "dependencyConditions": ["Succeeded"] },
+          { "activity": "DQ_Bronze_Research", "dependencyConditions": ["Succeeded"] }
+        ],
+        "policy": { "timeout": "0.04:00:00", "retry": 1, "retryIntervalInSeconds": 120 },
+        "typeProperties": {
+          "notebookId": "<notebook-guid-02-silver>",
+          "workspaceId": "<workspace-guid>",
+          "parameters": {
+            "env":      { "value": { "value": "@pipeline().parameters.env", "type": "Expression" }, "type": "string" },
+            "pipeline": { "value": "silver_payments", "type": "string" },
+            "run_id":   { "value": { "value": "@pipeline().RunId", "type": "Expression" }, "type": "string" }
+          }
+        }
+      },
+      {
+        "name": "DQ_Silver_Payments",
+        "type": "TridentNotebook",
+        "dependsOn": [{ "activity": "Silver_Payments", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "notebookId": "<notebook-guid-03-dq>",
+          "workspaceId": "<workspace-guid>",
+          "parameters": {
+            "env":           { "value": { "value": "@pipeline().parameters.env", "type": "Expression" }, "type": "string" },
+            "pipeline":      { "value": "silver_payments", "type": "string" },
+            "layer":         { "value": "silver", "type": "string" },
+            "run_id":        { "value": { "value": "@pipeline().RunId", "type": "Expression" }, "type": "string" },
+            "fail_on_error": { "value": true, "type": "bool" }
+          }
+        }
+      },
+
+      {
+        "name": "Gold_Star_Schema",
+        "type": "TridentNotebook",
+        "dependsOn": [{ "activity": "DQ_Silver_Payments", "dependencyConditions": ["Succeeded"] }],
+        "policy": { "timeout": "0.04:00:00", "retry": 1, "retryIntervalInSeconds": 120 },
+        "typeProperties": {
+          "notebookId": "<notebook-guid-04-gold>",
+          "workspaceId": "<workspace-guid>",
+          "parameters": {
+            "env":      { "value": { "value": "@pipeline().parameters.env", "type": "Expression" }, "type": "string" },
+            "pipeline": { "value": "gold_star_schema", "type": "string" },
+            "run_id":   { "value": { "value": "@pipeline().RunId", "type": "Expression" }, "type": "string" },
+            "optimize": { "value": true, "type": "bool" }
+          }
+        }
+      },
+      {
+        "name": "DQ_Gold_Fact_Payment",
+        "type": "TridentNotebook",
+        "dependsOn": [{ "activity": "Gold_Star_Schema", "dependencyConditions": ["Succeeded"] }],
+        "typeProperties": {
+          "notebookId": "<notebook-guid-03-dq>",
+          "workspaceId": "<workspace-guid>",
+          "parameters": {
+            "env":           { "value": { "value": "@pipeline().parameters.env", "type": "Expression" }, "type": "string" },
+            "pipeline":      { "value": "gold_star_schema", "type": "string" },
+            "layer":         { "value": "gold", "type": "string" },
+            "table":         { "value": "fact_payment", "type": "string" },
+            "run_id":        { "value": { "value": "@pipeline().RunId", "type": "Expression" }, "type": "string" },
+            "fail_on_error": { "value": true, "type": "bool" }
+          }
+        }
+      },
+
+      {
+        "name": "Notify_On_Failure",
+        "type": "Office365Outlook",
+        "_comment": "Fires when any upstream gate fails. CAS needs to know a load was rejected, not discover stale numbers in a dashboard.",
+        "dependsOn": [
+          { "activity": "DQ_Bronze_General",    "dependencyConditions": ["Failed"] },
+          { "activity": "DQ_Bronze_Research",   "dependencyConditions": ["Failed"] },
+          { "activity": "DQ_Silver_Payments",   "dependencyConditions": ["Failed"] },
+          { "activity": "DQ_Gold_Fact_Payment", "dependencyConditions": ["Failed"] }
+        ],
+        "typeProperties": {
+          "inputs": {
+            "method": "post",
+            "path": "/v2/Mail",
+            "body": {
+              "To": "<cas-data-analytics-dl@example.com>",
+              "Subject": {
+                "value": "@concat('[CAS] Open Payments load FAILED - run ', pipeline().RunId)",
+                "type": "Expression"
+              },
+              "Body": {
+                "value": "@concat('Pipeline: ', pipeline().Pipeline, '<br>Run: ', pipeline().RunId, '<br>A data quality gate rejected the load. Gold was not refreshed; the semantic model still reflects the last good run.')",
+                "type": "Expression"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "annotations": ["cas", "open-payments", "medallion"]
+  }
+}

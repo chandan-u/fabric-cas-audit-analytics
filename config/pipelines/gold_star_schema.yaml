@@ -1,0 +1,36 @@
+name: gold_star_schema
+layer: gold
+
+source:
+  table: payments
+
+# Order matters: dimensions are written before the fact so that a
+# referential-integrity check has parents to validate against.
+entities:
+  - name: dim_recipient
+    mode: overwrite
+  - name: dim_manufacturer
+    mode: overwrite
+  - name: dim_nature
+    mode: overwrite
+  - name: dim_date
+    mode: overwrite
+  - name: fact_payment
+    mode: overwrite
+    partition_by: [program_year]
+
+# Placeholder so stage 04's target lookup resolves; the fact is the grain that matters.
+target:
+  table: fact_payment
+  mode: overwrite
+
+expectations:
+  - type: not_null
+    columns: [payment_id, recipient_sk, manufacturer_sk, date_sk]
+    severity: error
+  - type: unique
+    columns: [payment_id]
+    severity: error
+  - type: row_count_min
+    value: 1000
+    severity: error

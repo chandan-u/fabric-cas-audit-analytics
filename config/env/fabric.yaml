@@ -1,0 +1,29 @@
+# Microsoft Fabric environment.
+# Paths are relative to the Lakehouse attached to the notebook, so the same
+# pipeline configs that run locally run here unchanged.
+env: fabric
+
+paths:
+  # External source landing (ADLS shortcut, or uploaded via pipeline Copy activity).
+  source: Files/source/open_payments
+  files: Files/landing/open_payments
+  bronze: Tables/bronze
+  silver: Tables/silver
+  gold: Tables/gold
+  quarantine: Files/quarantine
+  dq_results: Tables/ops/dq_results
+
+spark:
+  # Fabric supplies the session; we do not set a master.
+  master: null
+  shuffle_partitions: 200
+  configs:
+    # Delta is the Fabric default -- these are the knobs worth being explicit about.
+    spark.sql.parquet.vorder.enabled: "true"
+    spark.microsoft.delta.optimizeWrite.enabled: "true"
+    spark.microsoft.delta.optimizeWrite.binSize: "1073741824"
+
+# Fabric processes the full population -- no sampling.
+sampling:
+  enabled: false
+  filter_manufacturers: []

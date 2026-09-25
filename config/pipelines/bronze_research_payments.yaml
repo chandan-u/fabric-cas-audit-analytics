@@ -1,0 +1,31 @@
+name: bronze_research_payments
+layer: bronze
+
+source:
+  dataset: RSRCH
+  format: csv
+  pattern: "OP_DTL_RSRCH_PGYR*.csv"
+  manufacturer_column: Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name
+  schema: null
+  options:
+    header: true
+    quote: '"'
+    escape: '"'
+    multiLine: true
+    mode: PERMISSIVE
+
+target:
+  table: rsrch_payments
+  mode: overwrite
+  partition_by: [Program_Year]
+
+expectations:
+  - type: not_null
+    columns: [Record_ID]
+    severity: error
+  - type: unique
+    columns: [Record_ID]
+    severity: error
+  - type: row_count_min
+    value: 1000
+    severity: error
