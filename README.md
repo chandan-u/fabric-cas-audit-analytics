@@ -1,4 +1,4 @@
-# CAS Continuous Audit Analytics on Microsoft Fabric
+# data on Microsoft Fabric
 
 Continuous auditing of **transfers of value to healthcare professionals**, built on
 [CMS Open Payments](https://www.cms.gov/openpayments/explore-the-data/dataset-downloads.html)
